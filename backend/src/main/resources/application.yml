@@ -2,7 +2,7 @@ spring:
   application:
     name: expense-tracker
   datasource:
-    url: jdbc:postgresql://localhost:5432/expense_tracker
+    url: jdbc:postgresql://localhost:${DB_PORT:5433}/expense_tracker
     username: ${DB_USERNAME:expense_user}
     password: ${DB_PASSWORD:expense_pass}
   jpa:

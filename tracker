@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Dev control script for the expense tracker: manages Postgres (Docker),
+# backend (Spring Boot), and frontend (Vite) as background processes.
+#
+# Processes are tracked by the port they listen on (8080 / 5173), not by PID.
+# On Windows, bash's `$!` under Git Bash/MSYS does not reliably correspond to
+# the real Win32 PID of a forked JVM/Node child, so PID-based tracking silently
+# fails to kill everything. Port-based lookup via `netstat` + `taskkill /T` is
+# what actually works here.
+#
+# Usage:
+#   ./tracker start                     Start Postgres + backend + frontend
+#   ./tracker stop                      Stop everything
+#   ./tracker status                    Show what's running
+#   ./tracker logs [backend|frontend]   Tail logs (default: both)
+
+set -u
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+LOG_DIR="$ROOT_DIR/.tracker/logs"
+BACKEND_PORT=8080
+FRONTEND_PORT=5173
+
+mkdir -p "$LOG_DIR"
+
+port_pids() {
+  local port="$1"
+  netstat -ano 2>/dev/null | grep -E "LISTENING" | grep -E ":${port}[[:space:]]" | awk '{print $NF}' | sort -u
+}
+
+is_port_open() {
+  [ -n "$(port_pids "$1")" ]
+}
+
+kill_port() {
+  local port="$1"
+  local name="$2"
+  local pids
+  pids="$(port_pids "$port")"
+  if [ -z "$pids" ]; then
+    echo "==> $name not running (nothing listening on :$port)."
+    return
+  fi
+  local pid
+  for pid in $pids; do
+    echo "==> Stopping $name (pid $pid, port $port)..."
+    taskkill //PID "$pid" //T //F >/dev/null 2>&1
+  done
+}
+
+cmd_start() {
+  echo "==> Starting Postgres (docker compose)..."
+  if ! docker compose up -d; then
+    echo "Could not start Postgres. Is Docker Desktop running?"
+    exit 1
+  fi
+
+  echo "==> Waiting for Postgres to accept connections..."
+  local ready=false
+  for _ in $(seq 1 30); do
+    if docker exec expense-tracker-db pg_isready -U expense_user -d expense_tracker >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" = false ]; then
+    echo "Postgres did not become ready in time. Check 'docker logs expense-tracker-db'."
+    exit 1
+  fi
+  echo "    Postgres is ready."
+
+  if is_port_open "$BACKEND_PORT"; then
+    echo "==> Backend already running on :$BACKEND_PORT."
+  else
+    echo "==> Starting backend on :$BACKEND_PORT..."
+    (cd backend && exec ./mvnw spring-boot:run) > "$LOG_DIR/backend.log" 2>&1 &
+    disown
+  fi
+
+  if is_port_open "$FRONTEND_PORT"; then
+    echo "==> Frontend already running on :$FRONTEND_PORT."
+  else
+    echo "==> Starting frontend on :$FRONTEND_PORT..."
+    (cd frontend && exec npm run dev) > "$LOG_DIR/frontend.log" 2>&1 &
+    disown
+  fi
+
+  echo ""
+  echo "Backend log:  tail -f .tracker/logs/backend.log   (or ./tracker logs backend)"
+  echo "Frontend log: tail -f .tracker/logs/frontend.log  (or ./tracker logs frontend)"
+  echo "Run './tracker stop' when you're done."
+}
+
+cmd_stop() {
+  kill_port "$BACKEND_PORT" "backend"
+  kill_port "$FRONTEND_PORT" "frontend"
+  echo "==> Stopping Postgres (docker compose)..."
+  docker compose down
+}
+
+cmd_status() {
+  if is_port_open "$BACKEND_PORT"; then
+    echo "backend:   running on :$BACKEND_PORT (pid $(port_pids "$BACKEND_PORT" | tr '\n' ' '))"
+  else
+    echo "backend:   stopped"
+  fi
+  if is_port_open "$FRONTEND_PORT"; then
+    echo "frontend:  running on :$FRONTEND_PORT (pid $(port_pids "$FRONTEND_PORT" | tr '\n' ' '))"
+  else
+    echo "frontend:  stopped"
+  fi
+  docker compose ps postgres 2>/dev/null
+}
+
+cmd_logs() {
+  case "${1:-all}" in
+    backend) tail -f "$LOG_DIR/backend.log" ;;
+    frontend) tail -f "$LOG_DIR/frontend.log" ;;
+    *) tail -f "$LOG_DIR/backend.log" "$LOG_DIR/frontend.log" ;;
+  esac
+}
+
+case "${1:-}" in
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  status) cmd_status ;;
+  logs) shift; cmd_logs "${1:-}" ;;
+  *)
+    echo "Usage: ./tracker {start|stop|status|logs [backend|frontend]}"
+    exit 1
+    ;;
+esac

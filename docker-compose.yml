@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: expense_user
       POSTGRES_PASSWORD: expense_pass
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - expense_tracker_data:/var/lib/postgresql/data
 

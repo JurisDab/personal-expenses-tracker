@@ -4,7 +4,6 @@ backend/target/
 *.jar
 *.war
 !.mvn/wrapper/maven-wrapper.jar
-.mvn/wrapper/maven-wrapper.properties
 
 # Node / frontend
 frontend/node_modules/
@@ -25,3 +24,6 @@ frontend/.env.local
 
 # Logs
 *.log
+
+# tracker script state
+.tracker/
