@@ -24,13 +24,11 @@ public class TransactionController {
     private final TransactionService transactionService;
 
     @GetMapping
-    public Page<TransactionResponse> list(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month,
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
-    ) {
+    public Page<TransactionResponse> list(@AuthenticationPrincipal UserPrincipal principal,
+                                          @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month,
+                                          @RequestParam(required = false) Long categoryId,
+                                          @RequestParam(defaultValue = "0") int page,
+                                          @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = PageRequest.of(page, size);
         return transactionService.list(principal.getId(), month, categoryId, pageable);
     }

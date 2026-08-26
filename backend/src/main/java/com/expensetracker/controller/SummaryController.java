@@ -21,10 +21,7 @@ public class SummaryController {
     private final SummaryService summaryService;
 
     @GetMapping("/monthly")
-    public MonthlySummaryResponse monthly(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month
-    ) {
+    public MonthlySummaryResponse monthly(@AuthenticationPrincipal UserPrincipal principal, @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
         return summaryService.monthlySummary(principal.getId(), month);
     }
 }

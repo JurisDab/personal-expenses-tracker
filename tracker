@@ -8,6 +8,12 @@
 # fails to kill everything. Port-based lookup via `netstat` + `taskkill /T` is
 # what actually works here.
 #
+# Backend/frontend are launched via PowerShell's Start-Process rather than
+# bash `&` backgrounding: a plain `&` job stays attached to the invoking
+# console on Windows, so closing that terminal (or Ctrl+C) kills it even
+# though it was backgrounded. Start-Process creates a genuinely independent
+# process that survives the shell that launched it.
+#
 # Usage:
 #   ./tracker start                     Start Postgres + backend + frontend
 #   ./tracker stop                      Stop everything
@@ -19,11 +25,22 @@ set -u
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+WIN_ROOT="$(pwd -W)"
 LOG_DIR="$ROOT_DIR/.tracker/logs"
 BACKEND_PORT=8080
 FRONTEND_PORT=5173
 
 mkdir -p "$LOG_DIR"
+
+start_detached() {
+  local file_path="$1"
+  local args="$2"
+  local work_dir="$3"
+  local log_name="$4"
+  powershell.exe -NoProfile -Command \
+    "Start-Process -FilePath '${file_path}' -ArgumentList '${args}' -WorkingDirectory '${work_dir}' -WindowStyle Hidden -RedirectStandardOutput '${WIN_ROOT}/.tracker/logs/${log_name}.log' -RedirectStandardError '${WIN_ROOT}/.tracker/logs/${log_name}.err.log'" \
+    >/dev/null 2>&1
+}
 
 port_pids() {
   local port="$1"
@@ -76,16 +93,14 @@ cmd_start() {
     echo "==> Backend already running on :$BACKEND_PORT."
   else
     echo "==> Starting backend on :$BACKEND_PORT..."
-    (cd backend && exec ./mvnw spring-boot:run) > "$LOG_DIR/backend.log" 2>&1 &
-    disown
+    start_detached "${WIN_ROOT}/backend/mvnw.cmd" "spring-boot:run" "${WIN_ROOT}/backend" "backend"
   fi
 
   if is_port_open "$FRONTEND_PORT"; then
     echo "==> Frontend already running on :$FRONTEND_PORT."
   else
     echo "==> Starting frontend on :$FRONTEND_PORT..."
-    (cd frontend && exec npm run dev) > "$LOG_DIR/frontend.log" 2>&1 &
-    disown
+    start_detached "npm.cmd" "run dev" "${WIN_ROOT}/frontend" "frontend"
   fi
 
   echo ""
@@ -117,9 +132,9 @@ cmd_status() {
 
 cmd_logs() {
   case "${1:-all}" in
-    backend) tail -f "$LOG_DIR/backend.log" ;;
-    frontend) tail -f "$LOG_DIR/frontend.log" ;;
-    *) tail -f "$LOG_DIR/backend.log" "$LOG_DIR/frontend.log" ;;
+    backend) tail -f "$LOG_DIR/backend.log" "$LOG_DIR/backend.err.log" ;;
+    frontend) tail -f "$LOG_DIR/frontend.log" "$LOG_DIR/frontend.err.log" ;;
+    *) tail -f "$LOG_DIR"/*.log ;;
   esac
 }
 

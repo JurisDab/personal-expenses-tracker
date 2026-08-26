@@ -19,6 +19,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     @Query("""
             SELECT t FROM Transaction t
+            JOIN FETCH t.category
             WHERE t.user.id = :userId
               AND t.date BETWEEN :start AND :end
               AND (:categoryId IS NULL OR t.category.id = :categoryId)
