@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Dev control script for the expense tracker: manages Postgres (Docker),
-# backend (Spring Boot), and frontend (Vite) as background processes.
+# Dev control script for the expense tracker: manages Postgres and Ollama
+# (Docker), plus backend (Spring Boot) and frontend (Vite) as background processes.
 #
 # Processes are tracked by the port they listen on (8080 / 5173), not by PID.
 # On Windows, bash's `$!` under Git Bash/MSYS does not reliably correspond to
@@ -29,6 +29,7 @@ WIN_ROOT="$(pwd -W)"
 LOG_DIR="$ROOT_DIR/.tracker/logs"
 BACKEND_PORT=8080
 FRONTEND_PORT=5173
+OLLAMA_MODEL="llama3.2:3b"
 
 mkdir -p "$LOG_DIR"
 
@@ -68,9 +69,9 @@ kill_port() {
 }
 
 cmd_start() {
-  echo "==> Starting Postgres (docker compose)..."
+  echo "==> Starting Postgres + Ollama (docker compose)..."
   if ! docker compose up -d; then
-    echo "Could not start Postgres. Is Docker Desktop running?"
+    echo "Could not start Postgres/Ollama. Is Docker Desktop running?"
     exit 1
   fi
 
@@ -88,6 +89,28 @@ cmd_start() {
     exit 1
   fi
   echo "    Postgres is ready."
+
+  echo "==> Waiting for Ollama to accept connections..."
+  ready=false
+  for _ in $(seq 1 30); do
+    if docker exec expense-tracker-ollama ollama list >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" = false ]; then
+    echo "Ollama did not become ready in time. Check 'docker logs expense-tracker-ollama'."
+    exit 1
+  fi
+  echo "    Ollama is ready."
+
+  if docker exec expense-tracker-ollama ollama list 2>/dev/null | grep -q "^${OLLAMA_MODEL}"; then
+    echo "==> Model $OLLAMA_MODEL already pulled."
+  else
+    echo "==> Pulling $OLLAMA_MODEL (first time only, ~2GB download)..."
+    docker exec expense-tracker-ollama ollama pull "$OLLAMA_MODEL"
+  fi
 
   if is_port_open "$BACKEND_PORT"; then
     echo "==> Backend already running on :$BACKEND_PORT."
@@ -112,7 +135,7 @@ cmd_start() {
 cmd_stop() {
   kill_port "$BACKEND_PORT" "backend"
   kill_port "$FRONTEND_PORT" "frontend"
-  echo "==> Stopping Postgres (docker compose)..."
+  echo "==> Stopping Postgres + Ollama (docker compose)..."
   docker compose down
 }
 
@@ -127,7 +150,7 @@ cmd_status() {
   else
     echo "frontend:  stopped"
   fi
-  docker compose ps postgres 2>/dev/null
+  docker compose ps postgres ollama 2>/dev/null
 }
 
 cmd_logs() {

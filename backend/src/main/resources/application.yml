@@ -27,3 +27,8 @@ app:
     expiration-ms: 86400000
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model: ${OLLAMA_MODEL:llama3.2:3b}
+      timeout-seconds: 15

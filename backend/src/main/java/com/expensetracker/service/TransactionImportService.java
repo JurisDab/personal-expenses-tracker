@@ -23,7 +23,9 @@ import java.io.Reader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Imports a Swedbank (Baltics) account statement CSV export. The export has no header row;
@@ -45,11 +47,21 @@ public class TransactionImportService {
     private final TransactionRepository transactionRepository;
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
+    private final CategorySuggestionService categorySuggestionService;
 
     @Transactional
     public ImportResult importCsv(Long userId, MultipartFile file) throws IOException {
-        Category fallbackCategory = resolveFallbackCategory(userId);
+        List<Category> categories = categoryRepository.findAllByUserIdOrderByNameAsc(userId);
+        if (categories.isEmpty()) {
+            throw new ResourceNotFoundException("Create at least one category before importing transactions");
+        }
+        Category fallbackCategory = resolveFallbackCategory(categories);
+        List<String> categoryNames = categories.stream().map(Category::getName).toList();
         User user = userRepository.getReferenceById(userId);
+
+        // Caches the AI suggestion per merchant description within this import so a repeated
+        // merchant (e.g. the same grocery store on multiple days) only calls the local model once.
+        Map<String, Category> categoryByDescription = new HashMap<>();
 
         int totalRows = 0;
         int imported = 0;
@@ -85,9 +97,17 @@ public class TransactionImportService {
                     continue;
                 }
 
+                Category category = categoryByDescription.computeIfAbsent(description, desc ->
+                        categorySuggestionService.suggestCategory(desc, categoryNames)
+                                .map(name -> categories.stream()
+                                        .filter(c -> c.getName().equalsIgnoreCase(name))
+                                        .findFirst()
+                                        .orElse(fallbackCategory))
+                                .orElse(fallbackCategory));
+
                 Transaction transaction = new Transaction();
                 transaction.setUser(user);
-                transaction.setCategory(fallbackCategory);
+                transaction.setCategory(category);
                 transaction.setAmount(amount);
                 transaction.setDescription(description);
                 transaction.setDate(date);
@@ -114,11 +134,7 @@ public class TransactionImportService {
         return raw.length() > MAX_DESCRIPTION_LENGTH ? raw.substring(0, MAX_DESCRIPTION_LENGTH) : raw;
     }
 
-    private Category resolveFallbackCategory(Long userId) {
-        List<Category> categories = categoryRepository.findAllByUserIdOrderByNameAsc(userId);
-        if (categories.isEmpty()) {
-            throw new ResourceNotFoundException("Create at least one category before importing transactions");
-        }
+    private Category resolveFallbackCategory(List<Category> categories) {
         return categories.stream()
                 .filter(c -> c.getName().equalsIgnoreCase("Other"))
                 .findFirst()

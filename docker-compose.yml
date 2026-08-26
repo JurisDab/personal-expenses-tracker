@@ -12,5 +12,15 @@ services:
     volumes:
       - expense_tracker_data:/var/lib/postgresql/data
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: expense-tracker-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   expense_tracker_data:
+  ollama_data:
