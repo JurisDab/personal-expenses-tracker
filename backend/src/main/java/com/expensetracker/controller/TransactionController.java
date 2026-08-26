@@ -1,8 +1,10 @@
 package com.expensetracker.controller;
 
+import com.expensetracker.dto.transaction.ImportResult;
 import com.expensetracker.dto.transaction.TransactionRequest;
 import com.expensetracker.dto.transaction.TransactionResponse;
 import com.expensetracker.security.UserPrincipal;
+import com.expensetracker.service.TransactionImportService;
 import com.expensetracker.service.TransactionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +15,9 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.YearMonth;
 
 @RestController
@@ -22,6 +26,7 @@ import java.time.YearMonth;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final TransactionImportService transactionImportService;
 
     @GetMapping
     public Page<TransactionResponse> list(@AuthenticationPrincipal UserPrincipal principal,
@@ -55,5 +60,13 @@ public class TransactionController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
         transactionService.delete(principal.getId(), id);
+    }
+
+    @PostMapping("/import")
+    public ImportResult importCsv(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam("file") MultipartFile file
+    ) throws IOException {
+        return transactionImportService.importCsv(principal.getId(), file);
     }
 }

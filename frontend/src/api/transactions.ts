@@ -33,3 +33,19 @@ export async function updateTransaction(id: number, payload: TransactionPayload)
 export async function deleteTransaction(id: number): Promise<void> {
   await apiClient.delete(`/transactions/${id}`);
 }
+
+export interface ImportResult {
+  totalRows: number;
+  imported: number;
+  skipped: number;
+  duplicates: number;
+}
+
+export async function importTransactionsCsv(file: File): Promise<ImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await apiClient.post<ImportResult>("/transactions/import", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}

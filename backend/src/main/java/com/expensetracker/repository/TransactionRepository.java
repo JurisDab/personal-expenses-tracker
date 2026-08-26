@@ -17,6 +17,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     boolean existsByCategoryIdAndUserId(Long categoryId, Long userId);
 
+    boolean existsByUserIdAndDateAndAmountAndDescription(
+            Long userId, LocalDate date, java.math.BigDecimal amount, String description
+    );
+
     @Query("""
             SELECT t FROM Transaction t
             JOIN FETCH t.category

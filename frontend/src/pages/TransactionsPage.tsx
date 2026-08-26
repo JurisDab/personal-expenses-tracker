@@ -1,7 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchCategories } from "../api/categories";
-import { createTransaction, deleteTransaction, fetchTransactions, updateTransaction } from "../api/transactions";
+import {
+  createTransaction,
+  deleteTransaction,
+  fetchTransactions,
+  importTransactionsCsv,
+  updateTransaction,
+  type ImportResult,
+} from "../api/transactions";
 import { TransactionForm, type TransactionFormValues } from "../components/TransactionForm";
 import type { Transaction } from "../types";
 
@@ -22,6 +29,9 @@ export function TransactionsPage() {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: categories } = useQuery({ queryKey: ["categories"], queryFn: fetchCategories });
 
@@ -63,6 +73,27 @@ export function TransactionsPage() {
     onSuccess: invalidate,
   });
 
+  const importMutation = useMutation({
+    mutationFn: importTransactionsCsv,
+    onSuccess: (result) => {
+      setImportResult(result);
+      setImportError(null);
+      invalidate();
+    },
+    onError: () => {
+      setImportResult(null);
+      setImportError("Could not import that file. Make sure it's a Swedbank CSV statement export.");
+    },
+  });
+
+  function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) {
+      importMutation.mutate(file);
+    }
+  }
+
   function openCreate() {
     setEditing(null);
     setError(null);
@@ -93,10 +124,45 @@ export function TransactionsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Transactions</h1>
-        <button onClick={openCreate} className="px-3 py-2 rounded-md bg-gray-900 text-white text-sm font-medium">
-          Add transaction
-        </button>
+        <div className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleFileSelected}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importMutation.isPending}
+            className="px-3 py-2 rounded-md border border-gray-300 text-sm font-medium disabled:opacity-50"
+          >
+            {importMutation.isPending ? "Importing..." : "Import CSV"}
+          </button>
+          <button onClick={openCreate} className="px-3 py-2 rounded-md bg-gray-900 text-white text-sm font-medium">
+            Add transaction
+          </button>
+        </div>
       </div>
+
+      {importResult && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 text-sm text-gray-700">
+          Imported {importResult.imported} of {importResult.totalRows} rows
+          {importResult.duplicates > 0 && ` — skipped ${importResult.duplicates} already-imported duplicates`}
+          {importResult.skipped > 0 && ` — skipped ${importResult.skipped} non-expense rows`}.
+          <button onClick={() => setImportResult(null)} className="ml-3 text-gray-500 underline">
+            Dismiss
+          </button>
+        </div>
+      )}
+      {importError && (
+        <div className="bg-white rounded-lg border border-red-200 p-4 text-sm text-red-600">
+          {importError}
+          <button onClick={() => setImportError(null)} className="ml-3 text-red-500 underline">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <input
